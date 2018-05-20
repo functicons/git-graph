@@ -10,7 +10,7 @@ from typing import Dict, Tuple, List
 # Git object types.
 Branch = collections.namedtuple('Branch', 'name commit')
 Commit = collections.namedtuple('Commit', 'hash tree parent')
-Tree = collections.namedtuple('Tree', 'hash trees blobs')
+Tree = collections.namedtuple('Tree', 'hash name trees blobs')
 Blob = collections.namedtuple('Blob', 'hash name')
 
 Hash = str
@@ -74,10 +74,10 @@ def parse_commit(hash: Hash, content: str) -> Commit:
   return Commit(**dict)
 
 # Gets the tree by its hash.
-def get_tree(hash: Hash) -> Commit:
+def get_tree(hash: Hash, name='/') -> Commit:
   if hash not in cache:
     content = git_cat_file(hash)
-    tree = parse_tree(hash, content)
+    tree = parse_tree(hash, name, content)
     for child_hash in tree.blobs:
       add_to_multimap(tree_to_blobs, hash, child_hash)
     for child_hash in tree.trees:
@@ -85,22 +85,20 @@ def get_tree(hash: Hash) -> Commit:
     cache[hash] = tree
   return cache[hash]
 
-def parse_tree(hash: Hash, content: str) -> Tree:
+def parse_tree(hash: Hash, name: str, content: str) -> Tree:
   lines = content.split('\n')
-  dict = {'hash' : hash, 'trees' : [], 'blobs' : []}
+  dict = {'hash' : hash, 'name': name, 'trees' : [], 'blobs' : []}
   for line in lines:
     if not line:
       continue
     # mode type hash name
-    parts = line.split()
-    assert(len(parts) == 4)
-    mode, type, hs, name = parts
+    mode, type, child_hash, child_name = line.split()
     if type == 'tree':
-      get_tree(hs)
-      dict['trees'].append(hs)
+      get_tree(child_hash, child_name)
+      dict['trees'].append(child_hash)
     elif type == 'blob':
-      dict['blobs'].append(hs)
-      blobs[hs] = Blob(hash=hs, name="...")
+      dict['blobs'].append(child_hash)
+      blobs[child_hash] = Blob(hash=child_hash, name=child_name)
   return Tree(**dict)
 
 def git_cat_file(hash: Hash):
@@ -121,6 +119,12 @@ def read_txt(file_path: str):
 def check_prerequisites():
   pass
 
+def get_display_name_for_blob(blob: Blob):
+  return blob.name + ' ' + blob.hash[:6]
+
+def get_display_name_for_tree(tree: Tree):
+  return tree.name + ' ' + tree.hash[:6]
+
 def main():
   check_prerequisites()
   branches = list_branches()
@@ -136,22 +140,27 @@ def main():
   with graph.subgraph(name='cluster_blobs') as subgraph:
     subgraph.attr(label='Blobs', color='gray')
     for hash in blobs:
-      subgraph.node(hash[:6], shape='ellipse', style='filled', color='lightgray')
+      subgraph.node(get_display_name_for_blob(blobs[hash]), shape='ellipse', style='filled', color='lightgray')
   with graph.subgraph(name='cluster_trees') as subgraph:
     subgraph.attr(label='Trees', color='gray')
     for hash in tree_to_blobs:
-      subgraph.node(hash[:6], shape='triangle')
+      tree = get_tree(hash)
+      tree_display_name = get_display_name_for_tree(tree)
+      subgraph.node(tree_display_name, shape='triangle')
       for blob_hash in tree_to_blobs[hash]:
-        subgraph.edge(hash[:6], blob_hash[:6])
+        subgraph.edge(tree_display_name, get_display_name_for_blob(blobs[blob_hash]))
     for hash in tree_to_trees:
-      subgraph.node(hash[:6], shape='triangle')
-      for tree_hash in tree_to_trees[hash]:
-        subgraph.edge(hash[:6], tree_hash[:6])
+      tree = get_tree(hash)
+      subgraph.node(get_display_name_for_tree(tree), shape='triangle')
+      for subtree_hash in tree_to_trees[hash]:
+        subtree = get_tree(subtree_hash)
+        subgraph.edge(get_display_name_for_tree(tree), get_display_name_for_tree(subtree))
   with graph.subgraph(name='cluster_commits') as subgraph:
     subgraph.attr(label='Commits', color='gray')
     for hash in commit_to_tree:
       subgraph.node(hash[:6], shape='rectangle', style='filled', color='lightgray')
-      subgraph.edge(hash[:6], commit_to_tree[hash][:6])
+      tree = get_tree(commit_to_tree[hash])
+      subgraph.edge(hash[:6], get_display_name_for_tree(tree))
     for hash in commit_to_parents:
       for parent_commit in commit_to_parents[hash]:
         subgraph.edge(hash[:6], parent_commit[:6])
@@ -161,10 +170,6 @@ def main():
       subgraph.node(branch, shape='parallelogram')
       subgraph.edge(branch, branch_to_commit[branch][:6])
 
-#  with graph.subgraph(name='cluster_branches', node_attr={'shape': 'box'}) as branches_subgraph:
-#    branches_subgraph.attr(label='Branches')
-#    for branch in branches:
-#      add_branch_node(branches_subgraph, branch)
   print(graph.source)
   graph.render('git.gv', view=True)
 
