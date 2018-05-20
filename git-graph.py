@@ -5,21 +5,16 @@ from graphviz import Digraph
 import os
 import subprocess
 
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Set
 
 # Git object types.
 Branch = collections.namedtuple('Branch', 'name commit')
-Commit = collections.namedtuple('Commit', 'hash tree parent')
+Commit = collections.namedtuple('Commit', 'hash tree parents')
 Tree = collections.namedtuple('Tree', 'hash name trees blobs')
 Blob = collections.namedtuple('Blob', 'hash name')
-
 Hash = str
 
 git_dir = os.path.join(os.getcwd(), '.git')
-
-graph = Digraph(comment='Git graph')
-graph.attr(compound='true')
-graph.attr('graph', splines='true')
 
 # object cache: hash -> object (commit, tree, blob).
 cache = {} # type: Dict[Hash, object]
@@ -44,12 +39,14 @@ def list_branches() -> List[Branch]:
   return [Branch(name=f, commit=read_txt(os.path.join(heads_dir, f))) for f in files]
 
 # Traverses the history of a commit.
-def traverse_history(commit_hash: Hash):
-    commit = get_commit(commit_hash)
-    while commit.parent:
-      parent_commit = get_commit(commit.parent)
-      add_to_multimap(commit_to_parents, commit.hash, parent_commit.hash)
-      commit = parent_commit
+def traverse_history(commit_hash: Hash, visited: Set[Hash] = set()):
+  if commit_hash in visited:
+    return
+  visited.add(commit_hash)
+  commit = get_commit(commit_hash)
+  for parent_hash in commit.parents:
+    add_to_multimap(commit_to_parents, commit_hash, parent_hash)
+    traverse_history(parent_hash, visited)
 
 # Gets the commit by its hash.
 def get_commit(hash: Hash) -> Commit:
@@ -63,14 +60,17 @@ def get_commit(hash: Hash) -> Commit:
 
 def parse_commit(hash: Hash, content: str) -> Commit:
   lines = content.split('\n')
-  dict = {'hash' : hash, 'tree' : None, 'parent' : None}
+  dict = {'hash' : hash, 'tree' : None, 'parents' : []}
   for line in lines:
     if not line:
       continue
     parts = line.split()
-    if len(parts) < 2 or parts[0] not in ['hash', 'tree', 'parent']:
+    if len(parts) < 2:
       continue
-    dict[parts[0]] = ' '.join(parts[1:])
+    if parts[0] == 'tree':
+      dict['tree'] = parts[1]
+    elif parts[0] == 'parent':
+      dict['parents'].append(parts[1])
   return Commit(**dict)
 
 # Gets the tree by its hash.
@@ -125,18 +125,23 @@ def get_display_name_for_blob(blob: Blob):
 def get_display_name_for_tree(tree: Tree):
   return tree.name + ' ' + tree.hash[:6]
 
-def main():
-  check_prerequisites()
+def parse_git_repo():
   branches = list_branches()
   for branch in branches:
     branch_to_commit[branch.name] = branch.commit
     traverse_history(branch.commit)
-  print(branch_to_commit)
-  print(commit_to_parents)
-  print(commit_to_tree)
-  print(tree_to_trees)
-  print(tree_to_blobs)
-  print(blobs)
+  print('Branch to commit: {}'.format(branch_to_commit))
+  print('Commit to parents: {}'.format(commit_to_parents))
+  print('Commit to tree: {}'.format(commit_to_tree))
+  print('Tree to subtrees: {}'.format(tree_to_trees))
+  print('Tree to blobs: {}'.format(tree_to_blobs))
+  print('Blobs: {}'.format(blobs))
+
+def generate_graph():
+  graph = Digraph(comment='Git graph')
+  graph.attr(compound='true')
+  graph.attr('graph', splines='true')
+
   with graph.subgraph(name='cluster_blobs') as subgraph:
     subgraph.attr(label='Blobs', color='gray')
     for hash in blobs:
@@ -172,6 +177,11 @@ def main():
 
   print(graph.source)
   graph.render('git.gv', view=True)
+
+def main():
+  check_prerequisites()
+  parse_git_repo()
+  generate_graph()
 
 
 if __name__ == '__main__':
