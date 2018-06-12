@@ -12,4 +12,4 @@ References on Git internals:
 - [Pro Git- Git Internals - Git Objects](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects)
 - [Understanding Git — Data Model](https://hackernoon.com/https-medium-com-zspajich-understanding-git-data-model-95eb16cc99f5)
 - [Learning Git Internals by Example](http://teohm.com/blog/learning-git-internals-by-example/)
-- [OSCON 2016: Dissecting Git's Guts - Git Internals - Emily Xie](https://www.youtube.com/watch?v=YUCwr1Y6bFI).
+- [OSCON 2016: Dissecting Git's Guts - Git Internals - Emily Xie](https://www.youtube.com/watch?v=YUCwr1Y6bFI)
